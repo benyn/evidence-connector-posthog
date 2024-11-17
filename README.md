@@ -1,4 +1,4 @@
-# Evidence posthog Source Plugin
+# Evidence PostHog Source Plugin
 
 Install this plugin in an Evidence app with
 ```bash
