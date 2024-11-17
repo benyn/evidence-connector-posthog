@@ -19,7 +19,7 @@ export const options = {
   projectId: {
     title: "Project ID",
     description:
-      "ID of the PostHog project that you want to connect to. You can find this in Settings > Project > General.",
+      "ID of the PostHog project you're trying to query data from. You can find this in Settings > Project > General.",
     type: "string",
     required: true,
   },

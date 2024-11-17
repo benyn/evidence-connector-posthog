@@ -1,7 +1,7 @@
 {
   "name": "evidence-connector-posthog",
   "version": "1.0.0",
-  "description": "",
+  "description": "Evidence data source connector for PostHog",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
   },
   "keywords": [
     "evidence",
-    "evidence-datasource"
+    "evidence-datasource",
+    "posthog"
   ]
 }
