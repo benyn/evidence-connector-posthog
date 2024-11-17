@@ -1,23 +1,113 @@
+import { EvidenceType, TypeFidelity } from "@evidence-dev/db-commons";
+import { postHogTypeToEvidenceType } from "./lib.js";
+
 /**
- * This type describes the options that your connector expects to recieve
- * This could include username + password, host + port, etc
  * @typedef {Object} ConnectorOptions
- * @property {string} SomeOption
- */
-
-import { EvidenceType } from "@evidence-dev/db-commons";
-
-/**
+ * @property {string} appHost
+ * @property {string} projectId
+ * @property {string} apiKey
  * @see https://docs.evidence.dev/plugins/create-source-plugin/#options-specification
- * @see https://github.com/evidence-dev/evidence/blob/main/packages/postgres/index.cjs#L316
  */
 export const options = {
-  SomeOption: {
-    title: "Some Option",
-    description:
-      "This object defines how SomeOption should be displayed and configured in the Settings UI",
-    type: "string", // options: 'string' | 'number' | 'boolean' | 'select' | 'file'
+  appHost: {
+    title: "API Host",
+    description: "Base URL of your PostHog instance for private endpoints.",
+    type: "string",
+    default: "https://us.posthog.com",
+    required: true,
   },
+  projectId: {
+    title: "Project ID",
+    description:
+      "ID of the PostHog project that you want to connect to. You can find this in Settings > Project > General.",
+    type: "string",
+    required: true,
+  },
+  apiKey: {
+    title: "Personal API Key",
+    description:
+      "API key with access to the project and Read access to Query scope. You can create one in Settings > User > Personal API keys.",
+    type: "string",
+    secret: true,
+    required: true,
+  },
+};
+
+/** @type {(options: ConnectorOptions, query: string) => Promise<Response>} */
+const createQuery = async (options, query) => {
+  const url = `${options.appHost}/api/projects/${options.projectId}/query/`;
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${options.apiKey}`,
+  };
+
+  const payload = {
+    query: {
+      kind: "HogQLQuery",
+      query: query,
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `${response.status} ${response.statusText}: ${await response.text()}`,
+    );
+  }
+
+  const data = await response.json();
+  return data;
+};
+
+/**
+ * Maps a PostHog query result to an object with column names as keys
+ * @param {Record<string, unknown>} result
+ * @param {[string, string][]} types
+ * @returns {Record<string, unknown>}
+ */
+const mapRowToObject = (result, types) => {
+  const standardized = {};
+  for (let i = 0; i < types.length; i++) {
+    standardized[types[i][0]] = types[i][1].startsWith("DateTime")
+      ? new Date(result[i])
+      : result[i];
+  }
+  return standardized;
+};
+
+/**
+ * Maps a PostHog query type to an Evidence column type
+ * @param {[string, string]} type
+ * @returns {import('@evidence-dev/db-commons').ColumnDefinition}
+ */
+const mapTypeToEvidenceColumnType = (type) => {
+  const mappedType = postHogTypeToEvidenceType(type[1]);
+  return {
+    name: type[0],
+    evidenceType: mappedType ?? EvidenceType.STRING,
+    typeFidelity: mappedType ? TypeFidelity.PRECISE : TypeFidelity.INFERRED,
+  };
+};
+
+/** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
+const runQuery = async (queryString, database) => {
+  // Trim trailing semicolon to avoid input validation errors
+  const trimmedQueryString = queryString.replace(/;\s*$/, "");
+
+  const data = await createQuery(database, trimmedQueryString);
+
+  const output = {
+    rows: data.results.map((result) => mapRowToObject(result, data.types)),
+    columnTypes: data.types.map((type) => mapTypeToEvidenceColumnType(type)),
+    expectedRowCount: data.results.length,
+  };
+
+  return output;
 };
 
 /**
@@ -31,77 +121,21 @@ export const options = {
  * @type {import("@evidence-dev/db-commons").GetRunner<ConnectorOptions>}
  */
 export const getRunner = (options) => {
-  console.debug(`SomeOption = ${options.SomeOption}`);
-
-  // This function will be called for EVERY file in the sources directory
-  // If you are expecting a specific file type (e.g. SQL files), make sure to filter
-  // to exclude others.
-
-  // If you are using some local database file (e.g. a sqlite or duckdb file)
-  // You may also need to filter that file out as well
   return async (queryText, queryPath) => {
-    // Note: add your logic to process each file queryText and/or queryPath here
-    // ...
-    
-    // Example output, delete or modify as needed
-    const output = {
-      rows: [
-        { someInt: 1, someString: "string" },
-        { someInt: 2, someString: "string2" },
-      ],
-      columnTypes: [
-        {
-          name: "someInt",
-          evidenceType: EvidenceType.NUMBER,
-          typeFidelity: "inferred",
-        },
-        {
-          name: "someString",
-          evidenceType: EvidenceType.STRING,
-          typeFidelity: "inferred",
-        },
-      ],
-      expectedRowCount: 2,
-    };
-
-    return output;
+    // Filter out non-sql files
+    if (!queryPath.endsWith(".sql")) return null;
+    return runQuery(queryText, options);
   };
 };
 
-// Uncomment to use the advanced source interface
-// This uses the `yield` keyword, and returns the same type as getRunner, but with an added `name` and `content` field (content is used for caching)
-// sourceFiles provides an easy way to read the source directory to check for / iterate through files
-// /** @type {import("@evidence-dev/db-commons").ProcessSource<ConnectorOptions>} */
-// export async function* processSource(options, sourceFiles, utilFuncs) {
-//   yield {
-//     title: "some_demo_table",
-//     content: "SELECT * FROM some_demo_table", // This is ONLY used for caching
-//     rows: [], // rows can be an array
-//     columnTypes: [
-//       {
-//         name: "someInt",
-//         evidenceType: EvidenceType.NUMBER,
-//         typeFidelity: "inferred",
-//       },
-//     ],
-//   };
-//   yield {
-//     title: "some_other_demo_table",
-//     content: "SELECT * FROM some_other_demo_table", // This is ONLY used for caching
-//     rows: async function* () {}, // rows can be a generator function for returning batches of results (e.g. if an API is paginated, or database supports cursors)
-//     columnTypes: [
-//       {
-//         name: "someOtherInt",
-//         evidenceType: EvidenceType.NUMBER,
-//         typeFidelity: "inferred",
-//       },
-//     ],
-//   };
-
-//  throw new Error("Process Source has not yet been implemented");
-// }
-
 /** @type {import("@evidence-dev/db-commons").ConnectionTester<ConnectorOptions>} */
 export const testConnection = async (opts) => {
-  return true;
+  try {
+    const data = await createQuery(opts, "SELECT 1");
+    return data.results?.[0]?.[0] === 1;
+  } catch (e) {
+    console.error(`Failed to connect: ${e.message}`);
+    if (e.cause) console.error(e.cause);
+    return false;
+  }
 };
