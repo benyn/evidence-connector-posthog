@@ -1,0 +1,4 @@
+{
+  "name": "evidence-connector-posthog",
+  "main": "index.js"
+}
