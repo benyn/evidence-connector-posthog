@@ -1,5 +1,4 @@
-import { EvidenceType, TypeFidelity } from "@evidence-dev/db-commons";
-import { postHogTypeToEvidenceType } from "./lib.js";
+import { toQueryResult } from "./lib.js";
 
 /**
  * @typedef {Object} ConnectorOptions
@@ -26,32 +25,65 @@ export const options = {
   apiKey: {
     title: "Personal API Key",
     description:
-      "API key with access to the project and Read access to Query scope. You can create one in Settings > User > Personal API keys.",
+      "API key with access to the project and Read access to Insight/Query scope. You can create one in Settings > User > Personal API keys.",
     type: "string",
     secret: true,
     required: true,
   },
 };
 
-/** @type {(options: ConnectorOptions, query: string) => Promise<Response>} */
-const createQuery = async (options, query) => {
-  const url = `${options.appHost}/api/projects/${options.projectId}/query/`;
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${options.apiKey}`,
-  };
+/** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
+const runHogQLQuery = async (queryString, options) => {
+  // Trim trailing semicolon to avoid input validation errors
+  const trimmedQuery = queryString.replace(/;\s*$/, "");
 
-  const payload = {
-    query: {
-      kind: "HogQLQuery",
-      query: query,
+  const response = await fetch(
+    `${options.appHost}/api/projects/${options.projectId}/query/`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${options.apiKey}`,
+      },
+      body: JSON.stringify({
+        query: {
+          kind: "HogQLQuery",
+          query: trimmedQuery,
+        },
+      }),
     },
-  };
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `${response.status} ${response.statusText}: ${await response.text()}`,
+    );
+  }
+
+  const data = await response.json();
+  return toQueryResult(data.results, data.types);
+};
+
+/** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
+const getInsight = async (queryString, options) => {
+  const idOrShortId = queryString.trim();
+
+  if (!idOrShortId) {
+    throw new Error("Insight ID cannot be empty");
+  }
+
+  const isId = /^\d+$/.test(idOrShortId);
+
+  const url = isId
+    ? `${options.appHost}/api/projects/${options.projectId}/insights/${idOrShortId}/?refresh=blocking`
+    : `${options.appHost}/api/projects/${options.projectId}/insights/?short_id=${idOrShortId}&refresh=blocking`;
 
   const response = await fetch(url, {
-    method: "POST",
-    headers: headers,
-    body: JSON.stringify(payload),
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.apiKey}`,
+    },
   });
 
   if (!response.ok) {
@@ -61,78 +93,32 @@ const createQuery = async (options, query) => {
   }
 
   const data = await response.json();
-  return data;
-};
 
-/**
- * Maps a PostHog query result to an object with column names as keys
- * @param {Record<string, unknown>} result
- * @param {[string, string][]} types
- * @returns {Record<string, unknown>}
- */
-const mapRowToObject = (result, types) => {
-  const standardized = {};
-  for (let i = 0; i < types.length; i++) {
-    standardized[types[i][0]] = types[i][1].startsWith("DateTime")
-      ? new Date(result[i])
-      : result[i];
+  if (isId) {
+    return toQueryResult(data.result, data.types);
+  } else {
+    if (!data.results?.length) {
+      throw new Error(`No insight found with short_id: ${idOrShortId}`);
+    }
+    return toQueryResult(data.results[0].result, data.results[0].types);
   }
-  return standardized;
 };
 
-/**
- * Maps a PostHog query type to an Evidence column type
- * @param {[string, string]} type
- * @returns {import('@evidence-dev/db-commons').ColumnDefinition}
- */
-const mapTypeToEvidenceColumnType = (type) => {
-  const mappedType = postHogTypeToEvidenceType(type[1]);
-  return {
-    name: type[0],
-    evidenceType: mappedType ?? EvidenceType.STRING,
-    typeFidelity: mappedType ? TypeFidelity.PRECISE : TypeFidelity.INFERRED,
-  };
-};
-
-/** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
-const runQuery = async (queryString, database) => {
-  // Trim trailing semicolon to avoid input validation errors
-  const trimmedQueryString = queryString.replace(/;\s*$/, "");
-
-  const data = await createQuery(database, trimmedQueryString);
-
-  const output = {
-    rows: data.results.map((result) => mapRowToObject(result, data.types)),
-    columnTypes: data.types.map((type) => mapTypeToEvidenceColumnType(type)),
-    expectedRowCount: data.results.length,
-  };
-
-  return output;
-};
-
-/**
- * Implementing this function creates a "file-based" connector
- *
- * Each file in the source directory will be passed to this function, and it will return
- * either an array, or an async generator {@see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function*}
- * that contains the query results
- *
- * @see https://docs.evidence.dev/plugins/create-source-plugin/
- * @type {import("@evidence-dev/db-commons").GetRunner<ConnectorOptions>}
- */
+/** @type {import("@evidence-dev/db-commons").GetRunner<ConnectorOptions>} */
 export const getRunner = (options) => {
   return async (queryText, queryPath) => {
-    // Filter out non-sql files
-    if (!queryPath.endsWith(".sql")) return null;
-    return runQuery(queryText, options);
+    // Filter out non-sql and non-insight files
+    if (queryPath.endsWith(".sql")) return runHogQLQuery(queryText, options);
+    if (queryPath.endsWith(".insight")) return getInsight(queryText, options);
+    return null;
   };
 };
 
 /** @type {import("@evidence-dev/db-commons").ConnectionTester<ConnectorOptions>} */
 export const testConnection = async (opts) => {
   try {
-    const data = await createQuery(opts, "SELECT 1");
-    return data.results?.[0]?.[0] === 1;
+    const data = await runHogQLQuery("SELECT 1", opts);
+    return data.rows?.[0]?.["1"] === 1;
   } catch (e) {
     console.error(`Failed to connect: ${e.message}`);
     if (e.cause) console.error(e.cause);
