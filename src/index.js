@@ -32,12 +32,41 @@ export const options = {
   },
 };
 
+/**
+ * Wrapper around fetch that handles retries and unsuccessful responses
+ * @param {string| URL|Request} input
+ * @param {RequestInit} [init]
+ * @returns {Promise<Response>}
+ */
+const fetchWithRetries = async (input, init) => {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(input, init);
+
+    if (response.ok) {
+      return response;
+    }
+
+    // Retry on Gateway Time-out errors
+    if (response.status === 504 && attempt < maxAttempts) {
+      console.log(`Retry attempt ${attempt} of ${maxAttempts - 1}`);
+      continue;
+    }
+
+    const details = await response.text();
+    throw new Error(
+      `HTTP ${response.status} ${response.statusText}: ${details}`,
+    );
+  }
+};
+
 /** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
 const runHogQLQuery = async (queryString, options) => {
   // Trim trailing semicolon to avoid input validation errors
   const trimmedQuery = queryString.replace(/;\s*$/, "");
 
-  const response = await fetch(
+  const response = await fetchWithRetries(
     `${options.appHost}/api/projects/${options.projectId}/query/`,
     {
       method: "POST",
@@ -53,12 +82,6 @@ const runHogQLQuery = async (queryString, options) => {
       }),
     },
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `${response.status} ${response.statusText}: ${await response.text()}`,
-    );
-  }
 
   const data = await response.json();
   return toQueryResult(data.results, data.types);
@@ -78,19 +101,13 @@ const getInsight = async (queryString, options) => {
     ? `${options.appHost}/api/projects/${options.projectId}/insights/${idOrShortId}/?refresh=blocking`
     : `${options.appHost}/api/projects/${options.projectId}/insights/?short_id=${idOrShortId}&refresh=blocking`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetries(url, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${options.apiKey}`,
     },
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `${response.status} ${response.statusText}: ${await response.text()}`,
-    );
-  }
 
   const data = await response.json();
 
