@@ -1,6 +1,6 @@
 {
   "name": "evidence-connector-posthog",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Evidence data source connector for PostHog",
   "main": "src/index.js",
   "type": "module",
@@ -13,18 +13,28 @@
   "devDependencies": {
     "@evidence-dev/plugin-connector": "^2.0.4",
     "typescript": "^5.3.3",
-    "vitest": "^1.2.0"
+    "vitest": "^2.1.5"
   },
   "dependencies": {
     "@evidence-dev/db-commons": "^1.0.1"
   },
   "evidence": {
-    "datasources": ["posthog"],
+    "datasources": [
+      "posthog"
+    ],
     "icon": "Clickhouse"
   },
   "keywords": [
     "evidence",
     "evidence-datasource",
     "posthog"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/benyn/evidence-connector-posthog.git"
+  },
+  "bugs": {
+    "url": "https://github.com/benyn/evidence-connector-posthog/issues"
+  },
+  "homepage": "https://github.com/benyn/evidence-connector-posthog#readme"
 }
