@@ -40,9 +40,11 @@ export const postHogTypeToEvidenceType = (dataType) => {
 const mapRowToObject = (result, types) => {
   const standardized = {};
   for (let i = 0; i < types.length; i++) {
-    standardized[types[i][0]] = types[i][1].startsWith("DateTime")
-      ? new Date(result[i])
-      : result[i];
+    const [name, type] = types[i];
+    const value = result[i];
+    standardized[name] =
+      // Handle both nullable and non-nullable DateTime types
+      type.includes("DateTime") && value !== null ? new Date(value) : value;
   }
   return standardized;
 };
@@ -52,10 +54,10 @@ const mapRowToObject = (result, types) => {
  * @param {[string, string]} type
  * @returns {import('@evidence-dev/db-commons').ColumnDefinition}
  */
-const mapTypeToEvidenceColumnType = (type) => {
-  const mappedType = postHogTypeToEvidenceType(type[1]);
+const mapTypeToEvidenceColumnType = ([name, type]) => {
+  const mappedType = postHogTypeToEvidenceType(type);
   return {
-    name: type[0],
+    name: name,
     evidenceType: mappedType ?? EvidenceType.STRING,
     typeFidelity: mappedType ? TypeFidelity.PRECISE : TypeFidelity.INFERRED,
   };
