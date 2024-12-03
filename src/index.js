@@ -48,9 +48,9 @@ const fetchWithRetries = async (input, init) => {
       return response;
     }
 
-    // Retry on Gateway Time-out errors
-    if (response.status === 504 && attempt < maxAttempts) {
-      console.log(`Retry attempt ${attempt} of ${maxAttempts - 1}`);
+    // Retry on Internal Server Error and Gateway Time-out errors
+    if ([500, 504].includes(response.status) && attempt < maxAttempts) {
+      console.warn(`Retry attempt ${attempt} of ${maxAttempts - 1}`);
       continue;
     }
 
