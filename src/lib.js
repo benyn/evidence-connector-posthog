@@ -1,4 +1,5 @@
 import { EvidenceType, TypeFidelity } from "@evidence-dev/db-commons";
+import { toDateInTimezone } from "./utils.js";
 
 /** @type {(dataType: string) => EvidenceType} */
 export const postHogTypeToEvidenceType = (dataType) => {
@@ -64,13 +65,81 @@ const mapTypeToEvidenceColumnType = ([name, type]) => {
 };
 
 /**
- * Transforms PostHog data into an Evidence QueryResult
+ * Transforms PostHog HogQL query results into an Evidence QueryResult
  * @param {Record<string, unknown>[]} results
  * @param {[string, string][]} types
  * @returns {import('@evidence-dev/db-commons').QueryResult}
  */
-export const toQueryResult = (results, types) => ({
+export const mapHogQLToQueryResult = (results, types) => ({
   rows: results.map((result) => mapRowToObject(result, types)),
   columnTypes: types.map((type) => mapTypeToEvidenceColumnType(type)),
   expectedRowCount: results.length,
 });
+
+/**
+ * Transforms PostHog Trends insight data into an Evidence QueryResult
+ * @param {Record<string, unknown>[]} result
+ * @param {string} timezone
+ * @returns {import('@evidence-dev/db-commons').QueryResult}
+ */
+export const mapTrendsToQueryResult = (result, timezone) => {
+  const rows = [];
+  for (let i = 0; i < result.length; i++) {
+    const seriesResult = result[i];
+    for (let j = 1; j < seriesResult.data?.length; j++) {
+      rows.push({
+        series: seriesResult.label,
+        label: seriesResult.labels?.[j],
+        date: seriesResult.days?.[j]
+          ? toDateInTimezone(seriesResult.days[j], timezone)
+          : null,
+        value: seriesResult.data?.[j],
+      });
+    }
+  }
+
+  return {
+    rows,
+    columnTypes: [
+      {
+        name: "series",
+        evidenceType: EvidenceType.STRING,
+        typeFidelity: TypeFidelity.PRECISE,
+      },
+      {
+        name: "label",
+        evidenceType: EvidenceType.STRING,
+        typeFidelity: TypeFidelity.PRECISE,
+      },
+      {
+        name: "date",
+        evidenceType: EvidenceType.DATE,
+        typeFidelity: TypeFidelity.PRECISE,
+      },
+      {
+        name: "value",
+        evidenceType: EvidenceType.NUMBER,
+        typeFidelity: TypeFidelity.PRECISE,
+      },
+    ],
+    expectedRowCount: rows.length,
+  };
+};
+
+/**
+ * Transforms PostHog insights into Evidence QueryResults
+ * @param {Record<string, unknown>} insight - PostHog insight data containing results and metadata
+ * @returns {import('@evidence-dev/db-commons').QueryResult}
+ */
+export const toQueryResult = (insight) => {
+  switch (insight.query?.source?.kind) {
+    case "HogQLQuery":
+      return mapHogQLToQueryResult(insight.result, insight.types);
+    case "TrendsQuery":
+      return mapTrendsToQueryResult(insight.result, insight.timezone);
+    default:
+      throw new Error(
+        `Unsupported insight kind: ${insight.query?.source?.kind}`,
+      );
+  }
+};

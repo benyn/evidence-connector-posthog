@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+### Enhancements
+
+- Added beta support for [retrieving Trends insights](https://posthog.com/docs/product-analytics/trends/overview)
+- Added automatic retry on 500 Internal Server Error responses
+
 ## 1.1.0
 
 ### Enhancements

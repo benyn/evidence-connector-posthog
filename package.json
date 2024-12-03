@@ -1,6 +1,6 @@
 {
   "name": "evidence-connector-posthog",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Evidence data source connector for PostHog",
   "main": "src/index.js",
   "type": "module",
@@ -16,7 +16,9 @@
     "vitest": "^2.1.5"
   },
   "dependencies": {
-    "@evidence-dev/db-commons": "^1.0.1"
+    "@date-fns/tz": "^1.2.0",
+    "@evidence-dev/db-commons": "^1.0.1",
+    "date-fns": "^4.1.0"
   },
   "evidence": {
     "datasources": [

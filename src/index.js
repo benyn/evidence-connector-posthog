@@ -1,4 +1,4 @@
-import { toQueryResult } from "./lib.js";
+import { mapHogQLToQueryResult, toQueryResult } from "./lib.js";
 
 /**
  * @typedef {Object} ConnectorOptions
@@ -84,7 +84,7 @@ const runHogQLQuery = async (queryString, options) => {
   );
 
   const data = await response.json();
-  return toQueryResult(data.results, data.types);
+  return mapHogQLToQueryResult(data.results, data.types);
 };
 
 /** @type {import("@evidence-dev/db-commons").RunQuery<ConnectorOptions>} */
@@ -112,12 +112,12 @@ const getInsight = async (queryString, options) => {
   const data = await response.json();
 
   if (isId) {
-    return toQueryResult(data.result, data.types);
+    return toQueryResult(data);
   } else {
     if (!data.results?.length) {
       throw new Error(`No insight found with short_id: ${idOrShortId}`);
     }
-    return toQueryResult(data.results[0].result, data.results[0].types);
+    return toQueryResult(data.results[0]);
   }
 };
 
